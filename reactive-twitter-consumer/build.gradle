@@ -17,7 +17,6 @@ apply plugin: 'io.spring.dependency-management'
 
 group = 'com.orlandovald.twitter.consumer'
 version = '0.0.1-SNAPSHOT'
-sourceCompatibility = 1.8
 
 repositories {
 	mavenCentral()
@@ -27,6 +26,12 @@ repositories {
 dependencies {
 	implementation('org.springframework.boot:spring-boot-starter-data-mongodb-reactive')
 	implementation('org.springframework.boot:spring-boot-starter-webflux')
+    implementation('com.twitter:hbc-core:2.2.0')
+
+    annotationProcessor('org.springframework.boot:spring-boot-configuration-processor')
+
 	testImplementation('org.springframework.boot:spring-boot-starter-test')
 	testImplementation('io.projectreactor:reactor-test')
 }
+
+compileJava.dependsOn(processResources)
