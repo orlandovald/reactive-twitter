@@ -5,7 +5,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties("ov")
 public class TwitterConsumerProperties {
 
-    private TwitterApi api;
+    private TwitterApi api = new TwitterApi();
 
     public TwitterApi getApi() {
         return api;

@@ -10,6 +10,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.ClientRequest;
 import org.springframework.web.util.UriUtils;
 
+import java.io.UnsupportedEncodingException;
 import java.net.URI;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
@@ -37,21 +38,22 @@ class OAuth1SignatureUtil {
     private static final String OAUTH_VERSION = "oauth_version";
     private static final String HMAC_SHA1 = "HMAC-SHA1";
     private static final String ONE_DOT_OH = "1.0";
+    private static final String UTF8_CHARSET_NAME = "UTF-8";
 
     private final Normalizer normalizer;
     private final Signer signer;
     private final SecureRandom secureRandom;
     private final OAuth1Credentials credentials;
 
-    OAuth1SignatureUtil(OAuth1Credentials credentials) {
+    public OAuth1SignatureUtil(OAuth1Credentials credentials) {
         this.credentials = credentials;
         this.normalizer = Normalizer.getStandardNormalizer();
         this.signer = Signer.getStandardSigner();
         this.secureRandom = new SecureRandom();
     }
 
-    String oAuth1Header(ClientRequest request) {
-        List<Request.Pair> requestParams = new ArrayList<>();
+    public String oAuth1Header(ClientRequest request) {
+        List<Request.Pair> requestParams = new ArrayList();
         for (Map.Entry<String, String> entry : parseQueryString(request.url().getRawQuery()).entrySet()) {
             requestParams.add(new Request.Pair(urlEncode(entry.getKey()), urlEncode(entry.getValue())));
         }
@@ -59,7 +61,7 @@ class OAuth1SignatureUtil {
         long timestampSecs = this.generateTimestamp();
         String nonce = this.generateNonce();
         OAuthParams.OAuth1Params oAuth1Params = new OAuthParams.OAuth1Params(
-                credentials.getAccessToken(), credentials.getConsumerKey(), nonce, timestampSecs,
+                credentials.getAccessToken(), credentials.getConsumerKey(), nonce, Long.valueOf(timestampSecs),
                 Long.toString(timestampSecs), "", HMAC_SHA1, ONE_DOT_OH);
 
         URI requestUri = request.url();
@@ -72,11 +74,13 @@ class OAuth1SignatureUtil {
         String signature;
         try {
             signature = this.signer.getString(normalized, credentials.getAccessTokenSecret(), credentials.getConsumerSecret());
-        } catch (InvalidKeyException | NoSuchAlgorithmException invalidKeyEx) {
+        } catch (InvalidKeyException invalidKeyEx) {
             throw new RuntimeException(invalidKeyEx);
+        } catch (NoSuchAlgorithmException noSuchAlgoEx) {
+            throw new RuntimeException(noSuchAlgoEx);
         }
 
-        Map<String, String> oauthHeaders = new HashMap<>();
+        Map<String, String> oauthHeaders = new HashMap();
         oauthHeaders.put(OAUTH_CONSUMER_KEY, this.quoted(credentials.getConsumerKey()));
         oauthHeaders.put(OAUTH_TOKEN, this.quoted(credentials.getAccessToken()));
         oauthHeaders.put(OAUTH_SIGNATURE, this.quoted(signature));
@@ -93,11 +97,11 @@ class OAuth1SignatureUtil {
     private int getPort(URI uri) {
         int port = uri.getPort();
 
-        if (port <= 0) {
-            if (uri.getScheme().equalsIgnoreCase("http")) {
+        if(port <= 0) {
+            if(uri.getScheme().equalsIgnoreCase("http")) {
                 port = 80;
             } else {
-                if (!uri.getScheme().equalsIgnoreCase("https")) {
+                if(!uri.getScheme().equalsIgnoreCase("https")) {
                     throw new IllegalStateException("Bad URI scheme: " + uri.getScheme());
                 }
                 port = 443;
@@ -107,7 +111,11 @@ class OAuth1SignatureUtil {
     }
 
     private static String formDecode(String encoded) {
-        return URLDecoder.decode(encoded, StandardCharsets.UTF_8);
+        try {
+            return URLDecoder.decode(encoded, UTF8_CHARSET_NAME);
+        } catch (UnsupportedEncodingException shouldntHappen) {
+            throw new IllegalStateException(shouldntHappen);
+        }
     }
 
     private Map<String, String> parseQueryString(String parameterString) {
@@ -115,12 +123,13 @@ class OAuth1SignatureUtil {
             return new HashMap<>();
         }
         String[] pairs = StringUtils.tokenizeToStringArray(parameterString, "&");
-        MultiValueMap<String, String> result = new LinkedMultiValueMap<>(pairs.length);
+        MultiValueMap<String, String> result = new LinkedMultiValueMap<String, String>(pairs.length);
         for (String pair : pairs) {
             int idx = pair.indexOf('=');
             if (idx == -1) {
                 result.add(formDecode(pair), "");
-            } else {
+            }
+            else {
                 String name = formDecode(pair.substring(0, idx));
                 String value = formDecode(pair.substring(idx + 1));
                 result.add(name, value);
