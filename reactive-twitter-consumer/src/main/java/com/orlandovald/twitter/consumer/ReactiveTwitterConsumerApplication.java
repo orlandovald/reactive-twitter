@@ -1,5 +1,6 @@
 package com.orlandovald.twitter.consumer;
 
+import com.orlandovald.twitter.consumer.domain.Tweet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationRunner;
@@ -7,6 +8,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.data.mongodb.repository.config.EnableReactiveMongoRepositories;
 import org.springframework.http.HttpHeaders;
 import org.springframework.util.Assert;
 import org.springframework.web.reactive.function.client.ClientRequest;
@@ -17,6 +19,7 @@ import reactor.core.publisher.Mono;
 
 import static java.util.stream.Collectors.joining;
 
+@EnableReactiveMongoRepositories
 @EnableConfigurationProperties(TwitterConsumerProperties.class)
 @SpringBootApplication
 public class ReactiveTwitterConsumerApplication {
@@ -28,7 +31,7 @@ public class ReactiveTwitterConsumerApplication {
     }
 
     @Bean
-    ApplicationRunner twitterStream(WebClient.Builder wcb, OAuth1SignatureUtil oauthUtil) {
+    ApplicationRunner twitterStream(WebClient.Builder wcb, OAuth1SignatureUtil oauthUtil, TweetRepository repo) {
         return args -> {
             Assert.isTrue(args.containsOption("track"), "[--track] argument is required");
             String tracks = args.getOptionValues("track").stream().collect(joining(","));
@@ -40,12 +43,13 @@ public class ReactiveTwitterConsumerApplication {
                     .filter(logRequest())
                     .build();
 
-            Flux<String> tweets = webClient.get().uri(uriBuilder -> uriBuilder.path("/statuses/filter.json")
+            Flux<Tweet> tweets = webClient.get().uri(uriBuilder -> uriBuilder.path("/statuses/filter.json")
                     .queryParam("track", tracks)
                     .build())
-                    .exchange().flatMapMany(clientResponse -> clientResponse.bodyToFlux(String.class));
+                    .exchange()
+                    .flatMapMany(clientResponse -> clientResponse.bodyToFlux(Tweet.class));
 
-            tweets.subscribe(System.out::println);
+            repo.saveAll(tweets).log().subscribe();
         };
     }
 
