@@ -1,6 +1,6 @@
 package com.orlandovald.twitter.consumer;
 
-import com.orlandovald.twitter.consumer.domain.Tweet;
+import com.mongodb.BasicDBObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationRunner;
@@ -8,30 +8,29 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
-import org.springframework.data.mongodb.repository.config.EnableReactiveMongoRepositories;
+import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.http.HttpHeaders;
 import org.springframework.util.Assert;
 import org.springframework.web.reactive.function.client.ClientRequest;
 import org.springframework.web.reactive.function.client.ExchangeFilterFunction;
 import org.springframework.web.reactive.function.client.WebClient;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import static java.util.stream.Collectors.joining;
 
-@EnableReactiveMongoRepositories
 @EnableConfigurationProperties(TwitterConsumerProperties.class)
 @SpringBootApplication
 public class ReactiveTwitterConsumerApplication {
 
-    public static Logger log = LoggerFactory.getLogger(ReactiveTwitterConsumerApplication.class);
+    private static final String COLLECTION_NAME = "tweets";
+    private static final Logger log = LoggerFactory.getLogger(ReactiveTwitterConsumerApplication.class);
 
     public static void main(String[] args) {
         SpringApplication.run(ReactiveTwitterConsumerApplication.class, args);
     }
 
     @Bean
-    ApplicationRunner twitterStream(WebClient.Builder wcb, OAuth1SignatureUtil oauthUtil, TweetRepository repo) {
+    ApplicationRunner twitterStream(WebClient.Builder wcb, OAuth1SignatureUtil oauthUtil, MongoTemplate template) {
         return args -> {
             Assert.isTrue(args.containsOption("track"), "[--track] argument is required");
             String tracks = args.getOptionValues("track").stream().collect(joining(","));
@@ -43,13 +42,15 @@ public class ReactiveTwitterConsumerApplication {
                     .filter(logRequest())
                     .build();
 
-            Flux<Tweet> tweets = webClient.get().uri(uriBuilder -> uriBuilder.path("/statuses/filter.json")
+
+            webClient.get().uri(uriBuilder -> uriBuilder.path("/statuses/filter.json")
                     .queryParam("track", tracks)
                     .build())
                     .exchange()
-                    .flatMapMany(clientResponse -> clientResponse.bodyToFlux(Tweet.class));
-
-            repo.saveAll(tweets).log().subscribe();
+                    .flatMapMany(clientResponse -> clientResponse.bodyToFlux(String.class))
+                    .map(BasicDBObject::parse)
+                    .log()
+                    .subscribe(x -> template.save(x, COLLECTION_NAME));
         };
     }
 
